@@ -484,11 +484,22 @@ class MessageHandler(private val myPeerID: String, private val appContext: andro
                 Log.w(TAG, "FILE_TRANSFER decode failed (broadcast) from ${peerID.take(8)}")
             }
 
-            // Fallback: plain text
+            // Fallback: plain text (filtered through BitchatShield)
+            val rawText = String(packet.payload, Charsets.UTF_8)
+            val rawSender = delegate?.getPeerNickname(peerID)
+            val inspection = com.bitchat.android.nostr.BitchatShield.inspectEvent(
+                pubkey = peerID,
+                rawContent = rawText,
+                rawNickname = rawSender
+            )
+            val allowed = when (inspection) {
+                is com.bitchat.android.nostr.BitchatShield.InspectionResult.Blocked -> return
+                is com.bitchat.android.nostr.BitchatShield.InspectionResult.Allowed -> inspection
+            }
             val message = BitchatMessage(
                 id = PacketIdUtil.computeIdHex(packet).uppercase(),
-                sender = delegate?.getPeerNickname(peerID) ?: "unknown",
-                content = String(packet.payload, Charsets.UTF_8),
+                sender = allowed.cleanNickname ?: "unknown",
+                content = allowed.cleanContent,
                 senderPeerID = peerID,
                 timestamp = Date(packet.timestamp.toLong())
             )

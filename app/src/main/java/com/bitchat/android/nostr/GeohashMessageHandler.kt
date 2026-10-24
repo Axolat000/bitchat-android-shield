@@ -71,12 +71,25 @@ class GeohashMessageHandler(
                 // Blocked users check (use injected DataManager which has loaded state)
                 if (dataManager.isGeohashUserBlocked(pubkey)) return@launch
 
+                // BitchatShield inspection (blocks Zalgo, forbidden chars, and spam bots)
+                val rawNick = event.tags.find { it.size >= 2 && it[0] == "n" }?.getOrNull(1)
+                val inspection = BitchatShield.inspectEvent(
+                    pubkey = pubkey,
+                    rawContent = if (event.kind == NostrKind.GEOHASH_PRESENCE) "" else event.content,
+                    rawNickname = rawNick,
+                    createdAtSeconds = event.createdAt.toLong()
+                )
+                val allowed = when (inspection) {
+                    is BitchatShield.InspectionResult.Blocked -> return@launch
+                    is BitchatShield.InspectionResult.Allowed -> inspection
+                }
+
                 // Update participant count (last seen) on BOTH Presence (20001) and Chat (20000) events
                 if (event.kind == NostrKind.GEOHASH_PRESENCE || event.kind == NostrKind.EPHEMERAL_EVENT) {
                     repo.updateParticipant(subscribedGeohash, pubkey, Date(event.createdAt * 1000L))
                 }
                 
-                event.tags.find { it.size >= 2 && it[0] == "n" }?.let { repo.cacheNickname(pubkey, it[1]) }
+                allowed.cleanNickname?.let { repo.cacheNickname(pubkey, it) }
                 event.tags.find { it.size >= 2 && it[0] == "t" && it[1] == "teleport" }?.let { repo.markTeleported(pubkey) }
                 // Register a geohash DM alias for this participant so MessageRouter can route DMs via Nostr
                 try {
@@ -99,7 +112,7 @@ class GeohashMessageHandler(
                 val msg = BitchatMessage(
                     id = event.id,
                     sender = senderName,
-                    content = event.content,
+                    content = allowed.cleanContent,
                     timestamp = Date(event.createdAt * 1000L),
                     isRelay = false,
                     originalSender = repo.displayNameForNostrPubkey(pubkey),

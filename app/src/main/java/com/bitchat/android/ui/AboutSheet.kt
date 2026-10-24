@@ -505,9 +505,16 @@ fun AboutSheet(
 
                     // Settings Section - Unified Card with Toggles
                     item(key = "settings") {
-                        LaunchedEffect(Unit) { PoWPreferenceManager.init(context) }
+                        LaunchedEffect(Unit) {
+                            PoWPreferenceManager.init(context)
+                            com.bitchat.android.nostr.BitchatShield.init(context)
+                        }
                         val powEnabled by PoWPreferenceManager.powEnabled.collectAsState()
                         val powDifficulty by PoWPreferenceManager.powDifficulty.collectAsState()
+                        val shieldZalgo by com.bitchat.android.nostr.BitchatShield.blockZalgo.collectAsState()
+                        val shieldBots by com.bitchat.android.nostr.BitchatShield.blockBots.collectAsState()
+                        val shieldLinks by com.bitchat.android.nostr.BitchatShield.blockLinks.collectAsState()
+                        val shieldBlockedCount by com.bitchat.android.nostr.BitchatShield.blockedCount.collectAsState()
                         var backgroundEnabled by remember { mutableStateOf(com.bitchat.android.service.MeshServicePreferences.isBackgroundEnabled(true)) }
                         var liveVoiceEnabled by remember {
                             mutableStateOf(com.bitchat.android.features.voice.LiveVoicePreferences.isEnabled(context))
@@ -574,6 +581,51 @@ fun AboutSheet(
                                         subtitle = stringResource(R.string.about_pow_tip),
                                         checked = powEnabled,
                                         onCheckedChange = { PoWPreferenceManager.setPowEnabled(it) }
+                                    )
+
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(start = 54.dp),
+                                        thickness = 1.dp,
+                                        color = colorScheme.outlineVariant
+                                    )
+
+                                    // Anti-Zalgo & Forbidden Characters Toggle
+                                    SettingsToggleRow(
+                                        icon = Icons.Filled.Warning,
+                                        title = "Anti-Zalgo & Caractères interdits",
+                                        subtitle = "Bloque les diacritiques empilés (baguette#̢̛ͥ...), caractères invisibles et # dans les pseudos",
+                                        checked = shieldZalgo,
+                                        onCheckedChange = { com.bitchat.android.nostr.BitchatShield.setBlockZalgo(it) }
+                                    )
+
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(start = 54.dp),
+                                        thickness = 1.dp,
+                                        color = colorScheme.outlineVariant
+                                    )
+
+                                    // Anti-Bot Heuristics Toggle
+                                    SettingsToggleRow(
+                                        icon = Icons.Filled.Lock,
+                                        title = "Protection Anti-Bot ($shieldBlockedCount bloqués)",
+                                        subtitle = "Bloque les pseudos auto-générés (bot_xxxx), le spam répété multi-clés et les rafales Sybil",
+                                        checked = shieldBots,
+                                        onCheckedChange = { com.bitchat.android.nostr.BitchatShield.setBlockBots(it) }
+                                    )
+
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(start = 54.dp),
+                                        thickness = 1.dp,
+                                        color = colorScheme.outlineVariant
+                                    )
+
+                                    // Anti-Link Spam Toggle
+                                    SettingsToggleRow(
+                                        icon = Icons.Filled.Public,
+                                        title = "Anti-Spam de Liens (URLs)",
+                                        subtitle = "Bloque tous les messages contenant des liens web (http/https, .com, .fr, t.me, discord.gg...)",
+                                        checked = shieldLinks,
+                                        onCheckedChange = { com.bitchat.android.nostr.BitchatShield.setBlockLinks(it) }
                                     )
 
                                     HorizontalDivider(

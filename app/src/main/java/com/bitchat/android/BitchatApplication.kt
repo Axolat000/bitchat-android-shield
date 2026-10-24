@@ -48,6 +48,12 @@ class BitchatApplication : Application() {
         // Initialize theme preference
         ThemePreferenceManager.init(this)
 
+        // Initialize BitchatShield (anti-bot & anti-Zalgo protection) and PoW preferences
+        try {
+            com.bitchat.android.nostr.BitchatShield.init(this)
+            com.bitchat.android.nostr.PoWPreferenceManager.init(this)
+        } catch (_: Exception) { }
+
         // Initialize chat UI mode (matrix transcript vs bubbles)
         com.bitchat.android.ui.theme.ChatUiModeManager.init(this)
 

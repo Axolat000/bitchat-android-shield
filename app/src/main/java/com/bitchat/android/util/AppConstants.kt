@@ -110,7 +110,7 @@ object AppConstants {
     }
 
     object Tor {
-        const val DEFAULT_SOCKS_PORT: Int = 9060
+        const val DEFAULT_SOCKS_PORT: Int = 9080
         const val RESTART_DELAY_MS: Long = 2_000L
         const val INACTIVITY_TIMEOUT_MS: Long = 5_000L
         const val MAX_RETRY_ATTEMPTS: Int = 5
@@ -122,8 +122,8 @@ object AppConstants {
         const val BASE_FONT_SIZE_SP: Int = 14
         const val MESSAGE_DEDUP_TIMEOUT_MS: Long = 30_000L
         const val SYSTEM_EVENT_DEDUP_TIMEOUT_MS: Long = 5_000L
-        const val ACTION_FORCE_FINISH: String = "com.bitchat.android.ACTION_FORCE_FINISH"
-        const val PERMISSION_FORCE_FINISH: String = "com.bitchat.android.permission.FORCE_FINISH"
+        const val ACTION_FORCE_FINISH: String = "com.bitchat.shield.ACTION_FORCE_FINISH"
+        const val PERMISSION_FORCE_FINISH: String = "com.bitchat.shield.permission.FORCE_FINISH"
     }
 
     object Media {

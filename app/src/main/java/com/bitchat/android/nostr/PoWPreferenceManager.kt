@@ -12,10 +12,10 @@ import kotlinx.coroutines.flow.asStateFlow
 object PoWPreferenceManager {
     
     private const val PREFS_NAME = "pow_preferences"
-    private const val KEY_POW_ENABLED = "pow_enabled"
+    private const val KEY_POW_ENABLED = "pow_enabled_v2"
     private const val KEY_POW_DIFFICULTY = "pow_difficulty"
     
-    // Default values
+    // Default values (keep false by default so normal Bitchat users without PoW are visible)
     private const val DEFAULT_POW_ENABLED = false
     private const val DEFAULT_POW_DIFFICULTY = 12 // Reasonable default for geohash spam prevention
     

@@ -100,10 +100,11 @@ class GeohashRepository(
 
     @Synchronized
     fun cacheNickname(pubkeyHex: String, nickname: String) {
+        val clean = BitchatShield.sanitizeNickname(nickname) ?: return
         val lower = pubkeyHex.lowercase()
         val previous = geoNicknames[lower]
-        participantStore.cacheNickname(lower, nickname)
-        if (previous != nickname && currentGeohash != null) {
+        participantStore.cacheNickname(lower, clean)
+        if (previous != clean && currentGeohash != null) {
             schedulePresenceRefresh()
         }
     }

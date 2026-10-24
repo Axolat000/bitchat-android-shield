@@ -443,14 +443,26 @@ class LocationNotesManager private constructor() {
         // Extract nickname from tags
         val nicknameTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "n" }
         val nickname = nicknameTag?.get(1)
+
+        // BitchatShield inspection for location notes
+        val inspection = BitchatShield.inspectEvent(
+            pubkey = event.pubkey,
+            rawContent = event.content,
+            rawNickname = nickname,
+            createdAtSeconds = event.createdAt.toLong()
+        )
+        val allowed = when (inspection) {
+            is BitchatShield.InspectionResult.Blocked -> return
+            is BitchatShield.InspectionResult.Allowed -> inspection
+        }
         
         // Create note
         val note = Note(
             id = event.id,
             pubkey = event.pubkey,
-            content = event.content,
+            content = allowed.cleanContent,
             createdAt = event.createdAt,
-            nickname = nickname
+            nickname = allowed.cleanNickname
         )
         
         // Add to collection
