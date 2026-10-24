@@ -141,7 +141,7 @@ class GeohashViewModel(
                     ?.liveLocationTokenForSelectedChannel(channel)
                 if (isLiveDerived && liveLocationToken == null) return@launch
                 val tempId = "temp_${System.currentTimeMillis()}_${kotlin.random.Random.nextInt(1000)}"
-                val pow = PoWPreferenceManager.getCurrentSettings()
+                val pow = PoWPreferenceManager.getCurrentSendSettings()
                 val localMsg = com.bitchat.android.model.BitchatMessage(
                     id = tempId,
                     sender = nickname ?: myPeerID,

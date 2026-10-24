@@ -511,6 +511,8 @@ fun AboutSheet(
                         }
                         val powEnabled by PoWPreferenceManager.powEnabled.collectAsState()
                         val powDifficulty by PoWPreferenceManager.powDifficulty.collectAsState()
+                        val sendPowEnabled by PoWPreferenceManager.sendPowEnabled.collectAsState()
+                        val sendPowDifficulty by PoWPreferenceManager.sendPowDifficulty.collectAsState()
                         val shieldZalgo by com.bitchat.android.nostr.BitchatShield.blockZalgo.collectAsState()
                         val shieldBots by com.bitchat.android.nostr.BitchatShield.blockBots.collectAsState()
                         val shieldLinks by com.bitchat.android.nostr.BitchatShield.blockLinks.collectAsState()
@@ -574,13 +576,28 @@ fun AboutSheet(
                                         color = colorScheme.outlineVariant
                                     )
 
-                                    // Proof of Work Toggle
+                                    // Incoming Proof of Work Filter Toggle (default: 0 bits / disabled)
                                     SettingsToggleRow(
                                         icon = Icons.Filled.Speed,
-                                        title = stringResource(R.string.about_pow),
-                                        subtitle = stringResource(R.string.about_pow_tip),
+                                        title = "Proof of Work Réception (${if (powEnabled) "${powDifficulty} bits" else "0 bit"})",
+                                        subtitle = "Filtre minimum requis pour voir les messages reçus (0 par défaut)",
                                         checked = powEnabled,
                                         onCheckedChange = { PoWPreferenceManager.setPowEnabled(it) }
+                                    )
+
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(start = 54.dp),
+                                        thickness = 1.dp,
+                                        color = colorScheme.outlineVariant
+                                    )
+
+                                    // Outgoing Send Proof of Work Toggle (default: 12 bits / enabled)
+                                    SettingsToggleRow(
+                                        icon = Icons.Filled.Speed,
+                                        title = "Proof of Work d'Envoi (${if (sendPowEnabled) "${sendPowDifficulty} bits" else "0 bit"})",
+                                        subtitle = "Mine tes messages envoyés (12 bits par défaut pour passer les filtres)",
+                                        checked = sendPowEnabled,
+                                        onCheckedChange = { PoWPreferenceManager.setSendPowEnabled(it) }
                                     )
 
                                     HorizontalDivider(
@@ -1151,10 +1168,12 @@ fun AboutSheet(
                         }
                     }
 
-                    // PoW Difficulty Slider (when enabled)
+                    // PoW Difficulty Sliders (Incoming filter + Outgoing send PoW)
                     item(key = "pow_slider") {
                         val powEnabled by PoWPreferenceManager.powEnabled.collectAsState()
                         val powDifficulty by PoWPreferenceManager.powDifficulty.collectAsState()
+                        val sendPowEnabled by PoWPreferenceManager.sendPowEnabled.collectAsState()
+                        val sendPowDifficulty by PoWPreferenceManager.sendPowDifficulty.collectAsState()
 
                         if (powEnabled) {
                             Column(modifier = Modifier.padding(top = 12.dp)) {
@@ -1175,7 +1194,7 @@ fun AboutSheet(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Text(
-                                                text = stringResource(R.string.about_difficulty),
+                                                text = "PoW Réception (filtre entrant)",
                                                 fontFamily = BitchatFontFamily,
                                                 fontSize = 14.sp,
                                                 fontWeight = FontWeight.Medium,
@@ -1215,6 +1234,76 @@ fun AboutSheet(
                                                 powDifficulty <= 16 -> stringResource(R.string.about_pow_desc_medium)
                                                 powDifficulty <= 20 -> stringResource(R.string.about_pow_desc_high)
                                                 powDifficulty <= 24 -> stringResource(R.string.about_pow_desc_very_high)
+                                                else -> stringResource(R.string.about_pow_desc_extreme)
+                                            },
+                                            fontSize = 12.sp,
+                                            fontFamily = BitchatFontFamily,
+                                            color = palette.textTertiary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (sendPowEnabled) {
+                            Column(modifier = Modifier.padding(top = 12.dp)) {
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = AboutHorizontalPadding),
+                                    color = colorScheme.surface,
+                                    shape = AboutCardShape
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "PoW d'Envoi (tes messages)",
+                                                fontFamily = BitchatFontFamily,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = colorScheme.onSurface
+                                            )
+                                            AnimatedCountLabel(
+                                                count = sendPowDifficulty,
+                                                text = stringResource(
+                                                    R.string.about_difficulty_value,
+                                                    sendPowDifficulty,
+                                                    NostrProofOfWork.estimateMiningTime(sendPowDifficulty)
+                                                ),
+                                                fontFamily = BitchatFontFamily,
+                                                fontSize = 12.sp,
+                                                color = colorScheme.onSurfaceVariant
+                                            )
+                                        }
+
+                                        Slider(
+                                            value = sendPowDifficulty.toFloat(),
+                                            onValueChange = { PoWPreferenceManager.setSendPowDifficulty(it.toInt()) },
+                                            valueRange = 0f..32f,
+                                            steps = 31,
+                                            colors = SliderDefaults.colors(
+                                                thumbColor = colorScheme.primary,
+                                                activeTrackColor = colorScheme.primary,
+                                                inactiveTrackColor = colorScheme.surfaceVariant
+                                            )
+                                        )
+
+                                        AnimatedCountLabel(
+                                            count = sendPowDifficulty,
+                                            text = when {
+                                                sendPowDifficulty == 0 -> stringResource(R.string.about_pow_desc_none)
+                                                sendPowDifficulty <= 8 -> stringResource(R.string.about_pow_desc_very_low)
+                                                sendPowDifficulty <= 12 -> stringResource(R.string.about_pow_desc_low)
+                                                sendPowDifficulty <= 16 -> stringResource(R.string.about_pow_desc_medium)
+                                                sendPowDifficulty <= 20 -> stringResource(R.string.about_pow_desc_high)
+                                                sendPowDifficulty <= 24 -> stringResource(R.string.about_pow_desc_very_high)
                                                 else -> stringResource(R.string.about_pow_desc_extreme)
                                             },
                                             fontSize = 12.sp,

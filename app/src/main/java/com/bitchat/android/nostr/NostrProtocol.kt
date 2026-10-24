@@ -181,8 +181,8 @@ object NostrProtocol {
             content = content
         )
         
-        // Check if Proof of Work is enabled
-        val powSettings = PoWPreferenceManager.getCurrentSettings()
+        // Check if outgoing Send Proof of Work is enabled
+        val powSettings = PoWPreferenceManager.getCurrentSendSettings()
         if (powSettings.enabled && powSettings.difficulty > 0) {
             Log.d(TAG, "PoW enabled for geohash event: difficulty=${powSettings.difficulty}")
             
