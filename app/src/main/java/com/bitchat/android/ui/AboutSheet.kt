@@ -623,7 +623,7 @@ fun AboutSheet(
                                     SettingsToggleRow(
                                         icon = Icons.Filled.Public,
                                         title = "Anti-Spam de Liens (URLs)",
-                                        subtitle = "Bloque tous les messages contenant des liens web (http/https, .com, .fr, t.me, discord.gg...)",
+                                        subtitle = "Autorise les liens normaux mais bloque le spam répété d'un même lien/domaine",
                                         checked = shieldLinks,
                                         onCheckedChange = { com.bitchat.android.nostr.BitchatShield.setBlockLinks(it) }
                                     )

@@ -13,7 +13,8 @@ import java.util.concurrent.ConcurrentHashMap
  * BitchatShield
  * - Blocks Zalgo / combining diacritic bombs (e.g. "baguette#̢̛ͥ̀̽̽ͨ̌...")
  * - Blocks forbidden invisible / BiDi / control characters while allowing all standard emojis & accents
- * - Blocks link / URL spam (http/https, www, domain links, obfuscated URLs, invite links)
+ * - Blocks link / URL spam (allows normal single link sharing, but blocks repeated links/domains
+ *   even when bots change the surrounding message text or rotate pubkeys, and blocks multi-link floods)
  * - Blocks automated spam bots (bot nickname patterns like liquid-bounce_8hex / bot_8hex,
  *   # spoofing in nicknames, and repeated spam flood across rotating pubkeys)
  * - Designed to never false-positive on normal users or Nostr relay history backfills
@@ -40,6 +41,10 @@ object BitchatShield {
     private const val MIN_FINGERPRINT_LEN_FOR_DEDUPE = 45
     private const val CONTENT_DEDUPE_WINDOW_SECONDS = 120L
 
+    // Link spam limits: allow 1 post per domain/link every 5 minutes (300s), max 2 links in a single message
+    private const val LINK_SPAM_WINDOW_SECONDS = 300L
+    private const val MAX_LINKS_PER_MESSAGE = 2
+
     private val _shieldEnabled = MutableStateFlow(true)
     val shieldEnabled: StateFlow<Boolean> = _shieldEnabled.asStateFlow()
 
@@ -64,6 +69,9 @@ object BitchatShield {
     // Maps normalized long-message fingerprint -> last event createdAt (seconds)
     private val recentLongSpamFingerprints = ConcurrentHashMap<String, Long>()
 
+    // Maps normalized link/domain key -> last event createdAt (seconds)
+    private val recentLinkTimestamps = ConcurrentHashMap<String, Long>()
+
     // Bot nickname regex: e.g. bot_1867b55a, liquid-bounce_c958b26e, liquid-bounce1234
     private val BOT_HEX_NICKNAME_REGEX = Regex(
         "^(?:bot|spam|liquid[-_]?bounce|autoedit)[a-z0-9_-]*$|^[a-z0-9_-]{2,20}[_-][0-9a-f]{6,12}$",
@@ -72,7 +80,7 @@ object BitchatShield {
 
     // Link / URL detection regex (matches http://, https://, www., t.me/, discord.gg/, and domain.tld)
     private val URL_OR_LINK_REGEX = Regex(
-        """(?i)(?:https?://|www\.|t\.me/|discord\.gg/|bit\.ly/|tinyurl\.com/|\b[a-z0-9][a-z0-9-]{1,61}\s*(?:\.|\[\.\]|\(\.\))\s*(?:com|fr|net|org|io|gg|xyz|me|co|ru|cn|top|site|online|shop|club|vip|icu|app|dev|ai|tv|cc|link|click|info|biz|pro)\b)"""
+        """(?i)(?:https?://[^\s<>"]+|www\.[^\s<>"]+|\b[a-z0-9][a-z0-9-]{1,61}\s*(?:\.|\[\.\]|\(\.\))\s*(?:com|fr|net|org|io|gg|xyz|me|co|ru|cn|top|site|online|shop|club|vip|icu|app|dev|ai|tv|cc|link|click|info|biz|pro)(?:/[^\s<>"]*)?)"""
     )
 
     fun init(context: Context) {
@@ -132,6 +140,23 @@ object BitchatShield {
     fun containsLinkOrUrl(input: String): Boolean {
         if (input.isEmpty()) return false
         return URL_OR_LINK_REGEX.containsMatchIn(input)
+    }
+
+    /**
+     * Extracts normalized domain/host keys from all URLs/links present in the text.
+     * For example, "https://www.AutoEditLab.com/promo?id=1" -> "autoeditlab.com"
+     */
+    fun extractNormalizedLinkKeys(input: String): List<String> {
+        if (input.isEmpty()) return emptyList()
+        return URL_OR_LINK_REGEX.findAll(input).map { match ->
+            var raw = match.value.lowercase()
+                .replace("[.]", ".")
+                .replace("(.)", ".")
+                .replace(" ", "")
+            raw = raw.removePrefix("https://").removePrefix("http://").removePrefix("www.")
+            val host = raw.substringBefore('/').substringBefore('?').substringBefore('#').trimEnd('.', ',', ';', ')', ']')
+            host.ifEmpty { raw }
+        }.toList()
     }
 
     /**
@@ -304,15 +329,7 @@ object BitchatShield {
             return InspectionResult.Blocked("only forbidden chars")
         }
 
-        // 2. Link / URL spam check
-        if (_blockLinks.value) {
-            if (containsLinkOrUrl(cleanContent) || (rawNickname != null && containsLinkOrUrl(rawNickname))) {
-                recordBlocked("link/URL spam blocked", normalizedPubkey)
-                return InspectionResult.Blocked("link spam")
-            }
-        }
-
-        // 3. Strict nickname check
+        // 2. Strict nickname check (must happen BEFORE recording links so a bot nickname doesn't consume a valid link slot)
         if (_strictNicknames.value && rawNickname != null) {
             if (rawNickname.contains('#')) {
                 recordBlocked("forbidden '#' in nickname tag", normalizedPubkey)
@@ -321,6 +338,34 @@ object BitchatShield {
             if (_blockBots.value && BOT_HEX_NICKNAME_REGEX.matches(rawNickname.trim())) {
                 recordBlocked("bot nickname pattern ($rawNickname)", normalizedPubkey)
                 return InspectionResult.Blocked("bot nickname pattern")
+            }
+        }
+
+        val eventSec = createdAtSeconds ?: (nowMs / 1000L)
+
+        // 3. Anti-Link-Spam check (allows normal link sharing, blocks repeated domain/URL spam or multi-link floods)
+        if (_blockLinks.value) {
+            if (rawNickname != null && containsLinkOrUrl(rawNickname)) {
+                recordBlocked("link in nickname", normalizedPubkey)
+                return InspectionResult.Blocked("link in nickname")
+            }
+            val linkKeys = extractNormalizedLinkKeys(cleanContent)
+            if (linkKeys.size > MAX_LINKS_PER_MESSAGE) {
+                recordBlocked("too many links in message (${linkKeys.size})", normalizedPubkey)
+                return InspectionResult.Blocked("link flood")
+            }
+            for (linkKey in linkKeys.distinct()) {
+                val previousSec = recentLinkTimestamps[linkKey]
+                if (previousSec != null && kotlin.math.abs(eventSec - previousSec) < LINK_SPAM_WINDOW_SECONDS) {
+                    recordBlocked("repeated link spam ($linkKey)", normalizedPubkey)
+                    return InspectionResult.Blocked("link spam ($linkKey)")
+                }
+            }
+            for (linkKey in linkKeys.distinct()) {
+                recentLinkTimestamps[linkKey] = eventSec
+            }
+            if (recentLinkTimestamps.size > 500) {
+                recentLinkTimestamps.clear()
             }
         }
 
@@ -336,7 +381,6 @@ object BitchatShield {
             // 4b. Long promotional / spam message deduplication across rotating pubkeys
             val fingerprint = contentFingerprint(cleanContent)
             if (fingerprint.length >= MIN_FINGERPRINT_LEN_FOR_DEDUPE) {
-                val eventSec = createdAtSeconds ?: (nowMs / 1000L)
                 val previousSec = recentLongSpamFingerprints.put(fingerprint, eventSec)
                 if (previousSec != null && kotlin.math.abs(eventSec - previousSec) < CONTENT_DEDUPE_WINDOW_SECONDS) {
                     recordBlocked("duplicate long spam content", normalizedPubkey)
@@ -368,6 +412,7 @@ object BitchatShield {
 
     fun resetStateForTesting() {
         recentLongSpamFingerprints.clear()
+        recentLinkTimestamps.clear()
         _blockedCount.value = 0
         _shieldEnabled.value = true
         _blockZalgo.value = true

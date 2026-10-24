@@ -44,23 +44,25 @@ class BitchatShieldTest {
     }
 
     @Test
-    fun `blocks link spam and promotional URLs`() {
-        val linkSpam = "Coucou tu veux réaliser des edits DECOUVRE https://autoeditlab.com jugé meilleur site"
-        assertTrue(BitchatShield.containsLinkOrUrl(linkSpam))
+    fun `allows normal link once but blocks repeated link spam across different messages`() {
+        val firstMsgWithLink = "Coucou tu veux réaliser des edits DECOUVRE https://autoeditlab.com jugé meilleur site"
+        val secondMsgWithSameLink = "Salut t'as filmé tes bagarres DECOUVRE https://autoeditlab.com montage auto"
 
-        val blockedUrl = BitchatShield.inspectEvent(
+        val firstResult = BitchatShield.inspectEvent(
             pubkey = "aaaa1111bbbb2222",
-            rawContent = linkSpam,
-            rawNickname = "user1"
+            rawContent = firstMsgWithLink,
+            rawNickname = "user1",
+            createdAtSeconds = 1_000L
         )
-        assertTrue(blockedUrl is BitchatShield.InspectionResult.Blocked)
+        assertTrue(firstResult is BitchatShield.InspectionResult.Allowed)
 
-        val blockedDomain = BitchatShield.inspectEvent(
-            pubkey = "aaaa1111bbbb3333",
-            rawContent = "Rejoins sur autoeditlab.com ou discord.gg/test",
-            rawNickname = "user2"
+        val secondResult = BitchatShield.inspectEvent(
+            pubkey = "cccc3333dddd4444",
+            rawContent = secondMsgWithSameLink,
+            rawNickname = "user2",
+            createdAtSeconds = 1_015L
         )
-        assertTrue(blockedDomain is BitchatShield.InspectionResult.Blocked)
+        assertTrue(secondResult is BitchatShield.InspectionResult.Blocked)
     }
 
     @Test
