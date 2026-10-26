@@ -405,4 +405,22 @@
     <string name="about_app_language">Langue de l’appli</string>
     <string name="about_system_default">Langue du système</string>
     <string name="about_select_language">Choisir la langue</string>
+    <string name="pow_message_not_sent">Message non envoyé : le calcul de preuve de travail a échoué. Réessayez ou réduisez la difficulté d’envoi.</string>
+    <string name="geohash_send_mining">Calcul du PoW…</string>
+    <string name="geohash_send_sending">Envoi · confirmation du relais en attente…</string>
+    <string name="geohash_send_accepted">Accepté par un relais</string>
+    <string name="geohash_send_failed">Échec de l’envoi</string>
+    <string name="geohash_send_unconfirmed">Non confirmé par un relais</string>
+    <string name="tor_health_disabled">Tor désactivé</string>
+    <string name="tor_health_starting">Démarrage de Tor…</string>
+    <string name="tor_health_reconnecting">Reconnexion de Tor…</string>
+    <string name="tor_health_ready">Tor prêt</string>
+    <string name="tor_health_stopping">Arrêt de Tor…</string>
+    <string name="tor_health_unavailable">Tor indisponible</string>
+    <string name="tor_health_disabled_desc">Active Tor pour faire passer les connexions internet par Tor.</string>
+    <string name="tor_health_starting_desc">Connexion au réseau Tor. Les connexions aux relais attendent que Tor soit prêt.</string>
+    <string name="tor_health_reconnecting_desc">Rétablissement de Tor. Les connexions aux relais restent acheminées par Tor.</string>
+    <string name="tor_health_ready_desc">Tor est prêt. Chaque message indique séparément son acceptation par un relais.</string>
+    <string name="tor_health_stopping_desc">Arrêt de Tor après sa désactivation.</string>
+    <string name="tor_health_unavailable_desc">Tor est indisponible. Vérifie ta connexion ou désactive puis réactive Tor.</string>
 </resources>

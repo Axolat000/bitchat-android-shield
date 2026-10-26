@@ -20,7 +20,11 @@ import com.bitchat.android.nostr.NostrSubscriptionManager
 import com.bitchat.android.nostr.PoWPreferenceManager
 import com.bitchat.android.nostr.GeohashAliasRegistry
 import com.bitchat.android.nostr.GeohashConversationRegistry
+import com.bitchat.android.model.BitchatMessage
+import com.bitchat.android.model.GeohashSendState
+import com.bitchat.android.nostr.NostrPublishResult
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -128,6 +132,12 @@ class GeohashViewModel(
 
     fun sendGeohashMessage(content: String, channel: com.bitchat.android.geohash.GeohashChannel, myPeerID: String, nickname: String?) {
         viewModelScope.launch {
+            var localMessage: BitchatMessage? = null
+            fun updateLocal(message: BitchatMessage) {
+                val previous = localMessage ?: return
+                messageManager.replaceChannelMessage("geo:${channel.geohash}", previous.id, message)
+                localMessage = message
+            }
             try {
                 val canUseChannel = locationChannelManager
                     ?.canUseSelectedLocationChannel(channel) == true
@@ -140,19 +150,17 @@ class GeohashViewModel(
                 val liveLocationToken = locationChannelManager
                     ?.liveLocationTokenForSelectedChannel(channel)
                 if (isLiveDerived && liveLocationToken == null) return@launch
-                val tempId = "temp_${System.currentTimeMillis()}_${kotlin.random.Random.nextInt(1000)}"
-                val pow = PoWPreferenceManager.getCurrentSendSettings()
-                val localMsg = com.bitchat.android.model.BitchatMessage(
-                    id = tempId,
+                localMessage = BitchatMessage(
                     sender = nickname ?: myPeerID,
                     content = content,
                     timestamp = Date(),
-                    isRelay = false,
                     senderPeerID = "geohash:${channel.geohash}",
                     channel = "#${channel.geohash}",
-                    powDifficulty = if (pow.enabled) pow.difficulty else null
+                    geohashSendState = if (PoWPreferenceManager.isSendPowEnabled() &&
+                        PoWPreferenceManager.getSendPowDifficulty() > 0
+                    ) GeohashSendState.Mining else GeohashSendState.Sending
                 )
-                messageManager.addChannelMessage("geo:${channel.geohash}", localMsg)
+                messageManager.addChannelMessage("geo:${channel.geohash}", requireNotNull(localMessage))
                 val identity = NostrIdentityBridge.deriveIdentity(
                     forGeohash = channel.geohash,
                     context = getApplication()
@@ -166,15 +174,42 @@ class GeohashViewModel(
                     nickname,
                     teleported
                 )
+                val localMsg = requireNotNull(localMessage).copy(
+                    id = event.id,
+                    timestamp = Date(event.createdAt * 1000L),
+                    geohashSendState = GeohashSendState.Sending,
+                    powDifficulty = if (com.bitchat.android.nostr.NostrProofOfWork.hasNonce(event)) {
+                        com.bitchat.android.nostr.NostrProofOfWork.calculateDifficulty(event.id)
+                    } else null
+                )
+                updateLocal(localMsg)
                 val relayManager = NostrRelayManager.getInstance(getApplication())
                 relayManager.sendEventToGeohash(
                     event,
                     channel.geohash,
                     includeDefaults = false,
                     nRelays = 5,
-                    liveLocationToken = liveLocationToken
+                    liveLocationToken = liveLocationToken,
+                    onResult = { result ->
+                        // Confirmations outlive this screen. The process-wide
+                        // store notifies whichever chat UI is currently active.
+                        com.bitchat.android.services.AppStateStore.replaceChannelMessage(
+                            "geo:${channel.geohash}", event.id,
+                            localMsg.copy(geohashSendState = when (result) {
+                                NostrPublishResult.Accepted -> GeohashSendState.RelayAccepted
+                                NostrPublishResult.Rejected -> GeohashSendState.Failed
+                                NostrPublishResult.Unconfirmed -> GeohashSendState.Unconfirmed
+                            })
+                        )
+                    }
                 )
+            } catch (e: CancellationException) {
+                localMessage?.let { updateLocal(it.copy(geohashSendState = GeohashSendState.Failed)) }
+                throw e
+            } catch (e: com.bitchat.android.nostr.PoWMiningException) {
+                localMessage?.let { updateLocal(it.copy(geohashSendState = GeohashSendState.Failed)) }
             } catch (e: Exception) {
+                localMessage?.let { updateLocal(it.copy(geohashSendState = GeohashSendState.Failed)) }
                 Log.e(TAG, "Failed to send geohash message: ${e.message}")
             }
         }

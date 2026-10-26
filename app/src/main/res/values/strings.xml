@@ -654,4 +654,22 @@
   <string name="about_app_language">App language</string>
   <string name="about_system_default">System default</string>
   <string name="about_select_language">Select language</string>
+  <string name="pow_message_not_sent" tools:ignore="MissingTranslation">Message not sent: the requested proof of work could not be completed. Try again or lower the sending difficulty.</string>
+    <string name="geohash_send_mining" tools:ignore="MissingTranslation">Calculating PoW…</string>
+    <string name="geohash_send_sending" tools:ignore="MissingTranslation">Sending · awaiting relay confirmation…</string>
+    <string name="geohash_send_accepted" tools:ignore="MissingTranslation">Accepted by a relay</string>
+    <string name="geohash_send_failed" tools:ignore="MissingTranslation">Sending failed</string>
+    <string name="geohash_send_unconfirmed" tools:ignore="MissingTranslation">Not confirmed by a relay</string>
+    <string name="tor_health_disabled" tools:ignore="MissingTranslation">Tor disabled</string>
+    <string name="tor_health_starting" tools:ignore="MissingTranslation">Tor starting…</string>
+    <string name="tor_health_reconnecting" tools:ignore="MissingTranslation">Tor reconnecting…</string>
+    <string name="tor_health_ready" tools:ignore="MissingTranslation">Tor ready</string>
+    <string name="tor_health_stopping" tools:ignore="MissingTranslation">Tor stopping…</string>
+    <string name="tor_health_unavailable" tools:ignore="MissingTranslation">Tor unavailable</string>
+    <string name="tor_health_disabled_desc" tools:ignore="MissingTranslation">Enable Tor to route internet connections through Tor.</string>
+    <string name="tor_health_starting_desc" tools:ignore="MissingTranslation">Connecting to Tor. Relay connections wait until Tor is ready.</string>
+    <string name="tor_health_reconnecting_desc" tools:ignore="MissingTranslation">Restoring Tor. Relay connections continue to use Tor.</string>
+    <string name="tor_health_ready_desc" tools:ignore="MissingTranslation">Tor is ready. Relay acceptance is shown on each outgoing message.</string>
+    <string name="tor_health_stopping_desc" tools:ignore="MissingTranslation">Stopping Tor after it was disabled.</string>
+    <string name="tor_health_unavailable_desc" tools:ignore="MissingTranslation">Tor is unavailable. Check your connection or turn Tor off and on again.</string>
 </resources>

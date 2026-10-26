@@ -1,8 +1,11 @@
 package com.bitchat.android.nostr
 
 import android.util.Log
+import com.google.gson.GsonBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import java.security.MessageDigest
 import kotlin.random.Random
 
@@ -91,33 +94,73 @@ object NostrProofOfWork {
         event: NostrEvent,
         targetDifficulty: Int,
         maxIterations: Int = 1_000_000
+    ): NostrEvent? = mineEventWithClock(
+        event, targetDifficulty, maxIterations, Random.nextLong(0, 1_000_000),
+        { (System.currentTimeMillis() / 1000).toInt() }
+    )
+
+    internal suspend fun mineEventWithClock(
+        event: NostrEvent,
+        targetDifficulty: Int,
+        maxIterations: Int,
+        initialNonce: Long,
+        nowSeconds: () -> Int
     ): NostrEvent? = withContext(Dispatchers.Default) {
         if (targetDifficulty <= 0) return@withContext event
         
         Log.d(TAG, "Starting PoW mining for difficulty $targetDifficulty...")
         val startTime = System.currentTimeMillis()
         
-        var nonce = Random.nextLong(0, 1_000_000).toString()
+        // Keep NIP-01 serialization identical, but serialize invariant fields
+        // once. Only the timestamp and decimal nonce change during mining.
+        val gson = GsonBuilder().disableHtmlEscaping().create()
+        val tags = event.tags.filterNot { it.firstOrNull() == "nonce" }
+        val serializedTags = tags.joinToString(",") { gson.toJson(it) }
+        val beforeTimestamp = "[0,${gson.toJson(event.pubkey)},"
+        val afterTimestamp = ",${event.kind},[$serializedTags${if (tags.isEmpty()) "" else ","}[\"nonce\",\""
+        val suffix = "\",\"$targetDifficulty\"]],${gson.toJson(event.content)}]".toByteArray(Charsets.UTF_8)
+        val digest = MessageDigest.getInstance("SHA-256")
+        val coroutineContext = currentCoroutineContext()
+        var timestamp = nowSeconds()
+        var prefix = "$beforeTimestamp$timestamp$afterTimestamp".toByteArray(Charsets.UTF_8)
+        var nonce = initialNonce
         var iterations = 0
         
         while (iterations < maxIterations) {
-            // Create a copy of the event with the nonce tag
-            val eventWithNonce = addNonceTag(event, nonce, targetDifficulty)
-            
-            // Calculate the event ID
-            val eventId = eventWithNonce.computeEventIdHex()
-            val actualDifficulty = calculateDifficulty(eventId)
+            coroutineContext.ensureActive()
+            val currentTimestamp = nowSeconds()
+            if (timestamp != currentTimestamp) {
+                timestamp = currentTimestamp
+                prefix = "$beforeTimestamp$timestamp$afterTimestamp".toByteArray(Charsets.UTF_8)
+            }
+            val nonceText = nonce.toString()
+            digest.update(prefix)
+            digest.update(nonceText.toByteArray(Charsets.UTF_8))
+            val hash = digest.digest(suffix)
+            val actualDifficulty = calculateHashDifficulty(hash)
             
             if (actualDifficulty >= targetDifficulty) {
                 val timeElapsed = System.currentTimeMillis() - startTime
                 Log.i(TAG, "✅ PoW mining successful! Difficulty: $actualDifficulty, iterations: $iterations, time: ${timeElapsed}ms")
                 
                 // Return the event with the computed ID
-                return@withContext eventWithNonce.copy(id = eventId)
+                val alphabet = "0123456789abcdef"
+                val eventId = buildString(hash.size * 2) {
+                    for (byte in hash) {
+                        val value = byte.toInt() and 0xff
+                        append(alphabet[value ushr 4])
+                        append(alphabet[value and 15])
+                    }
+                }
+                return@withContext event.copy(
+                    id = eventId,
+                    createdAt = timestamp,
+                    tags = tags + listOf(listOf("nonce", nonceText, targetDifficulty.toString()))
+                )
             }
             
             // Increment nonce and try again
-            nonce = (nonce.toLongOrNull()?.plus(1) ?: Random.nextLong()).toString()
+            nonce++
             iterations++
             
             // Log progress every 100,000 iterations
@@ -132,29 +175,14 @@ object NostrProofOfWork {
         return@withContext null
     }
     
-    /**
-     * Add or update the nonce tag in an event
-     * @param event The original event
-     * @param nonce The nonce value
-     * @param targetDifficulty The target difficulty being attempted
-     * @return A new event with the nonce tag added/updated
-     */
-    private fun addNonceTag(event: NostrEvent, nonce: String, targetDifficulty: Int): NostrEvent {
-        val newTags = event.tags.toMutableList()
-        
-        // Remove existing nonce tag if present
-        newTags.removeAll { tag -> tag.isNotEmpty() && tag[0] == "nonce" }
-        
-        // Add new nonce tag with format: ["nonce", nonce_value, target_difficulty]
-        newTags.add(listOf("nonce", nonce, targetDifficulty.toString()))
-        
-        // Update created_at as recommended by NIP-13
-        val updatedCreatedAt = (System.currentTimeMillis() / 1000).toInt()
-        
-        return event.copy(
-            tags = newTags,
-            createdAt = updatedCreatedAt
-        )
+    private fun calculateHashDifficulty(hash: ByteArray): Int {
+        var count = 0
+        for (byte in hash) {
+            val value = byte.toInt() and 0xff
+            if (value == 0) count += 8
+            else return count + Integer.numberOfLeadingZeros(value) - 24
+        }
+        return count
     }
     
     /**

@@ -110,6 +110,7 @@ class NostrRelayManager private constructor() {
     
     // Bounded per-relay delivery queue for reconnect reliability.
     private val messageQueue = NostrPendingEventQueue(MAX_QUEUED_EVENTS)
+    private val publishTracker = NostrPublishTracker(MAX_QUEUED_EVENTS)
     
     // Coroutine scope for background operations
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -226,23 +227,30 @@ class NostrRelayManager private constructor() {
         geohash: String,
         includeDefaults: Boolean = false,
         nRelays: Int = 5,
-        liveLocationToken: Long? = null
+        liveLocationToken: Long? = null,
+        onResult: ((NostrPublishResult) -> Unit)? = null
     ) {
-        if (!isNetworkActionAllowed(liveLocationToken)) return
+        if (!isNetworkActionAllowed(liveLocationToken)) {
+            onResult?.invoke(NostrPublishResult.Unconfirmed)
+            return
+        }
         ensureGeohashRelaysConnected(
             geohash,
             nRelays,
             includeDefaults,
             liveLocationToken
         )
-        if (!isNetworkActionAllowed(liveLocationToken)) return
+        if (!isNetworkActionAllowed(liveLocationToken)) {
+            onResult?.invoke(NostrPublishResult.Unconfirmed)
+            return
+        }
         val relayUrls = getRelaysForGeohash(geohash)
         if (relayUrls.isEmpty()) {
             Log.w(TAG, "No target relays for geohash event; falling back to defaults")
-            sendEvent(event, Companion.defaultRelays(), liveLocationToken)
+            sendEvent(event, Companion.defaultRelays(), liveLocationToken, onResult)
             return
         }
-        sendEvent(event, relayUrls, liveLocationToken)
+        sendEvent(event, relayUrls, liveLocationToken, onResult)
     }
 
     // --- Internal helpers ---
@@ -312,6 +320,7 @@ class NostrRelayManager private constructor() {
         subscriptions.replaceAll { _, ids -> ids - liveSubscriptionIds }
 
         messageQueue.removeLiveLocationEvents()
+        publishTracker.clear()
 
         liveGeohashTokens.keys.forEach(geohashToRelays::remove)
         liveGeohashTokens.clear()
@@ -446,14 +455,25 @@ class NostrRelayManager private constructor() {
     fun sendEvent(
         event: NostrEvent,
         relayUrls: List<String>? = null,
-        liveLocationToken: Long? = null
+        liveLocationToken: Long? = null,
+        onResult: ((NostrPublishResult) -> Unit)? = null
     ) {
         val targetRelays = (relayUrls ?: relaysList.map { it.url })
             .filter { it.isNotBlank() }
             .distinct()
-        if (targetRelays.isEmpty()) return
+        if (targetRelays.isEmpty()) {
+            onResult?.invoke(NostrPublishResult.Unconfirmed)
+            return
+        }
 
         val queued = runNetworkAction(liveLocationToken) {
+            if (onResult != null) {
+                publishTracker.track(event.id, targetRelays, android.os.SystemClock.elapsedRealtime() + 60_000, onResult)
+                scope.launch {
+                    delay(60_000)
+                    publishTracker.expire(android.os.SystemClock.elapsedRealtime())
+                }
+            }
             val queueId = messageQueue.enqueue(
                 event = event,
                 relayUrls = targetRelays,
@@ -471,7 +491,7 @@ class NostrRelayManager private constructor() {
                 }
             }
         }
-        if (!queued) return
+        if (!queued) onResult?.invoke(NostrPublishResult.Unconfirmed)
     }
     
     /**
@@ -667,6 +687,7 @@ class NostrRelayManager private constructor() {
 
             // Clear any queued messages waiting to be sent
             messageQueue.clear()
+            publishTracker.clear()
 
             Log.i(TAG, "Cleared all Nostr subscriptions and routing caches")
         } catch (e: Exception) {
@@ -848,6 +869,17 @@ class NostrRelayManager private constructor() {
         }
 
         try {
+            // A selected Tor route is published before its SOCKS listener is
+            // ready. Wait without attempting sockets or using a direct route.
+            if (!com.bitchat.android.net.ArtiTorManager.getInstance().awaitSelectedRoute(60_000)) {
+                handleConnectionCreationFailure(
+                    urlString, java.io.IOException("Tor route is not ready"), connectionToken
+                )
+                return
+            }
+            if (!desiredConnected.get() || !isNetworkActionAllowed(connectionToken) ||
+                connections.containsKey(urlString)
+            ) return
             val request = Request.Builder()
                 .url(urlString)
                 .build()
@@ -868,6 +900,8 @@ class NostrRelayManager private constructor() {
             }
             if (!started) return
             
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create WebSocket connection")
             handleConnectionCreationFailure(urlString, e, connectionToken)
@@ -936,18 +970,14 @@ class NostrRelayManager private constructor() {
                         }
                     }
 
-                    // DEDUPLICATION: Check if we've already processed this event
+                    val handler = messageHandlers[response.subscriptionId] ?: return
+                    // Validate before reserving the global deduplication ID.
                     eventDeduplicator.processEvent(response.event) { event ->
                         // Call handler for new events only
-                        val handler = messageHandlers[response.subscriptionId]
-                        if (handler != null) {
-                            scope.launch(Dispatchers.Main) {
-                                if (isNetworkActionAllowed(subscriptionInfo.liveLocationToken)) {
-                                    handler(event)
-                                }
+                        scope.launch(Dispatchers.Main) {
+                            if (isNetworkActionAllowed(subscriptionInfo.liveLocationToken)) {
+                                handler(event)
                             }
-                        } else {
-                            Log.w(TAG, "⚠️ No handler for Nostr subscription")
                         }
                     }
 
@@ -958,6 +988,7 @@ class NostrRelayManager private constructor() {
                 }
 
                 is NostrResponse.Ok -> {
+                    publishTracker.acknowledge(response.eventId, relayUrl, response.accepted)
                     val wasGiftWrap = pendingGiftWrapIDs.remove(response.eventId)
                     if (!response.accepted) {
                         val level = if (wasGiftWrap) Log.WARN else Log.ERROR

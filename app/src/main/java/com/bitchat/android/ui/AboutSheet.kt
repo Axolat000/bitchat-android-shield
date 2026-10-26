@@ -72,6 +72,7 @@ import com.bitchat.android.core.ui.component.sheet.LocalSheetDismiss
 import com.bitchat.android.core.ui.component.sheet.BitchatBottomSheet
 import com.bitchat.android.util.downloadPhaseLabel
 import com.bitchat.android.hotspot.HotspotActivity
+import com.bitchat.android.net.health
 import com.bitchat.android.net.ArtiTorManager
 import com.bitchat.android.net.TorMode
 import com.bitchat.android.net.TorPreferenceManager
@@ -521,7 +522,7 @@ fun AboutSheet(
                         var liveVoiceEnabled by remember {
                             mutableStateOf(com.bitchat.android.features.voice.LiveVoicePreferences.isEnabled(context))
                         }
-                        val torMode = remember { mutableStateOf(TorPreferenceManager.get(context)) }
+                        val torMode by TorPreferenceManager.modeFlow.collectAsState()
                         val torProvider = remember { ArtiTorManager.getInstance() }
                         val torStatus by torProvider.statusFlow.collectAsState()
                         val torAvailable = remember { torProvider.isTorAvailable() }
@@ -655,22 +656,17 @@ fun AboutSheet(
                                     SettingsToggleRow(
                                         icon = Icons.Filled.Security,
                                         title = stringResource(R.string.about_tor_title),
-                                        subtitle = stringResource(R.string.about_tor_route),
-                                        checked = torMode.value == TorMode.ON,
+                                        subtitle = torHealthLabel(torStatus.health(torMode)),
+                                        checked = torMode == TorMode.ON,
                                         onCheckedChange = { enabled ->
                                             if (torAvailable) {
-                                                torMode.value = if (enabled) TorMode.ON else TorMode.OFF
-                                                TorPreferenceManager.set(context, torMode.value)
+                                                TorPreferenceManager.set(context, if (enabled) TorMode.ON else TorMode.OFF)
                                             }
                                         },
                                         enabled = torAvailable,
-                                        statusIndicator = if (torMode.value == TorMode.ON) {
+                                        statusIndicator = if (torMode == TorMode.ON) {
                                             {
-                                                val statusColor = when {
-                                                    torStatus.running && torStatus.bootstrapPercent >= 100 -> colorScheme.primary
-                                                    torStatus.running -> palette.accentOrange
-                                                    else -> colorScheme.error
-                                                }
+                                                val statusColor = torHealthColor(torStatus.health(torMode))
                                                 Surface(
                                                     color = statusColor,
                                                     shape = CircleShape,
@@ -1316,60 +1312,16 @@ fun AboutSheet(
                         }
                     }
 
-                    // Tor Status (when enabled)
+                    // Observe the preference directly so toggles update this card immediately.
                     item(key = "tor_status") {
-                        val torMode = remember { mutableStateOf(TorPreferenceManager.get(context)) }
+                        val torMode by TorPreferenceManager.modeFlow.collectAsState()
                         val torProvider = remember { ArtiTorManager.getInstance() }
                         val torStatus by torProvider.statusFlow.collectAsState()
-
-                        if (torMode.value == TorMode.ON) {
-                            Column(modifier = Modifier.padding(top = 12.dp)) {
-                                Surface(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = AboutHorizontalPadding),
-                                    color = colorScheme.surface,
-                                    shape = AboutCardShape
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(16.dp),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            val statusColor = when {
-                                                torStatus.running && torStatus.bootstrapPercent >= 100 -> colorScheme.primary
-                                                torStatus.running -> palette.accentOrange
-                                                else -> colorScheme.error
-                                            }
-                                            Surface(color = statusColor, shape = CircleShape, modifier = Modifier.size(10.dp)) {}
-                                            Text(
-                                                text = if (torStatus.running) {
-                                                    stringResource(R.string.about_tor_connected, torStatus.bootstrapPercent)
-                                                } else {
-                                                    stringResource(R.string.about_tor_disconnected)
-                                                },
-                                                fontFamily = BitchatFontFamily,
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = colorScheme.onSurface
-                                            )
-                                        }
-                                        if (torStatus.lastLogLine.isNotEmpty()) {
-                                            Text(
-                                                text = torStatus.lastLogLine.take(120),
-                                                fontSize = 11.sp,
-                                                fontFamily = BitchatFontFamily,
-                                                color = palette.textTertiary,
-                                                maxLines = 2
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        TorHealthCard(
+                            health = torStatus.health(torMode),
+                            modifier = Modifier.fillMaxWidth()
+                                .padding(horizontal = AboutHorizontalPadding, vertical = 12.dp)
+                        )
                     }
 
                     } // end Settings tab

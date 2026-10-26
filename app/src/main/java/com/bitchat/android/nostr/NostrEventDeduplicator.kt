@@ -116,6 +116,8 @@ class NostrEventDeduplicator(
      * @return true if the event was processed (not a duplicate), false if it was deduplicated
      */
     fun processEvent(event: NostrEvent, processor: (NostrEvent) -> Unit): Boolean {
+        // Do not let a forged copy reserve the ID of a later genuine event.
+        if (!event.isValidSignature()) return false
         return if (!isDuplicate(event.id)) {
             processor(event)
             true

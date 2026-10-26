@@ -83,7 +83,7 @@ composeCompiler {
 // root. The app sources remain the single source of truth; extend the include list below (don't
 // copy files into wear/src) when the compiler reveals a missing transitive dependency.
 // Deliberately excluded: ui (except the DebugSettingsManager the mesh layer references),
-// onboarding, nostr (except pure-Kotlin Bech32), net, geohash, wifi-aware, hotspot, voice
+// onboarding, nostr (except the helpers below), net, geohash, wifi-aware, hotspot, voice
 // features, and the phone's foreground service.
 val sharedSourceIncludes = listOf(
     "com/bitchat/android/protocol/**",
@@ -106,6 +106,7 @@ val sharedSourceIncludes = listOf(
     "com/bitchat/android/services/meshgraph/**",
     "com/bitchat/android/service/TransportBridgeService.kt",
     "com/bitchat/android/nostr/Bech32.kt",
+    "com/bitchat/android/nostr/BitchatShield.kt",
     "com/bitchat/android/nostr/GeohashAliasRegistry.kt",
     "com/bitchat/android/features/file/FileUtils.kt",
     "com/bitchat/android/features/voice/**",

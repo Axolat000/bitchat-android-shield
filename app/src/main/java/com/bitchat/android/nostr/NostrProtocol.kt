@@ -6,6 +6,8 @@ import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+class PoWMiningException(val difficulty: Int) : IllegalStateException("Unable to complete the requested proof of work")
+
 /**
  * NIP-17 Protocol Implementation for Private Direct Messages
  * Compatible with iOS implementation
@@ -159,7 +161,8 @@ object NostrProtocol {
         geohash: String,
         senderIdentity: NostrIdentity,
         nickname: String? = null,
-        teleported: Boolean = false
+        teleported: Boolean = false,
+        maxMiningIterations: Int = 2_000_000
     ): NostrEvent = withContext(Dispatchers.Default) {
         val tags = mutableListOf<List<String>>()
         tags.add(listOf("g", geohash))
@@ -194,7 +197,7 @@ object NostrProtocol {
                 val minedEvent = NostrProofOfWork.mineEvent(
                     event = event,
                     targetDifficulty = powSettings.difficulty,
-                    maxIterations = 2_000_000 // Allow up to 2M iterations for reasonable mining time
+                    maxIterations = maxMiningIterations
                 )
                 
                 if (minedEvent != null) {
@@ -202,7 +205,7 @@ object NostrProtocol {
                     val actualDifficulty = NostrProofOfWork.calculateDifficulty(event.id)
                     Log.d(TAG, "✅ PoW mining successful: target=${powSettings.difficulty}, actual=$actualDifficulty, nonce=${NostrProofOfWork.getNonce(event)}")
                 } else {
-                    Log.w(TAG, "❌ PoW mining failed, proceeding without PoW")
+                    throw PoWMiningException(powSettings.difficulty)
                 }
             } finally {
                 // Always stop mining state when done (success or failure)

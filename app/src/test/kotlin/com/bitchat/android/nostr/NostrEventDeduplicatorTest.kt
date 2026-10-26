@@ -3,11 +3,27 @@ package com.bitchat.android.nostr
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
+@RunWith(RobolectricTestRunner::class)
 class NostrEventDeduplicatorTest {
+    @Test
+    fun `forged copy cannot reserve the id of a genuine signed event`() {
+        val deduplicator = NostrEventDeduplicator()
+        val privateKey = "0".repeat(63) + "1"
+        val genuine = NostrEvent(pubkey = NostrCrypto.derivePublicKey(privateKey), createdAt = 1, kind = NostrKind.TEXT_NOTE, tags = emptyList(), content = "synthetic").sign(privateKey)
+        val forged = genuine.copy(sig = "0".repeat(128))
+        var delivered = 0
+        assertEquals(false, deduplicator.processEvent(forged) { delivered++ })
+        assertEquals(false, deduplicator.contains(genuine.id))
+        assertEquals(true, deduplicator.processEvent(genuine) { delivered++ })
+        assertEquals(false, deduplicator.processEvent(genuine) { delivered++ })
+        assertEquals(1, delivered)
+    }
     @Test
     fun `isDuplicate flags a repeated event id`() {
         val deduplicator = NostrEventDeduplicator(maxCapacity = 10)

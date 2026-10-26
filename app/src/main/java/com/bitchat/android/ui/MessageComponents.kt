@@ -496,6 +496,27 @@ fun MessageItem(
             }
         }
 
+        message.geohashSendState?.let { sendState ->
+            val label = when (sendState) {
+                com.bitchat.android.model.GeohashSendState.Mining -> R.string.geohash_send_mining
+                com.bitchat.android.model.GeohashSendState.Sending -> R.string.geohash_send_sending
+                com.bitchat.android.model.GeohashSendState.RelayAccepted -> R.string.geohash_send_accepted
+                com.bitchat.android.model.GeohashSendState.Failed -> R.string.geohash_send_failed
+                com.bitchat.android.model.GeohashSendState.Unconfirmed -> R.string.geohash_send_unconfirmed
+            }
+            Text(
+                text = stringResource(label),
+                fontFamily = BitchatFontFamily,
+                fontSize = 10.sp,
+                color = if (sendState == com.bitchat.android.model.GeohashSendState.Failed) {
+                    colorScheme.error
+                } else colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .align(if (bubbles) Alignment.End else Alignment.Start)
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+            )
+        }
+
         // Link previews removed; links are now highlighted inline and clickable within the message text
     }
 }

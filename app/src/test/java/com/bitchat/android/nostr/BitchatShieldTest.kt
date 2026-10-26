@@ -5,12 +5,38 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class BitchatShieldTest {
 
     @Before
     fun setUp() {
         BitchatShield.resetStateForTesting()
+    }
+
+    @Test
+    fun `rejected multiline event does not reserve its link domain`() {
+        val rejected = BitchatShield.inspectEvent("synthetic-a", (1..26).joinToString("\n") { "line" } + " https://example.org/first", "Reader", 1000L)
+        assertTrue(rejected is BitchatShield.InspectionResult.Blocked)
+        val next = BitchatShield.inspectEvent("synthetic-b", "Reference https://example.org/second", "Reader", 1001L)
+        assertTrue(next is BitchatShield.InspectionResult.Allowed)
+    }
+
+    @Test
+    fun `userinfo and explicit ports share the same domain admission slot`() {
+        val links = listOf("https://example.org/a", "https://example.org:443/b", "https://alias@example.org/c", "https://www.example.org:8443/d")
+        assertEquals(List(4) { "example.org" }, BitchatShield.extractNormalizedLinkKeys(links.joinToString(" ")))
+        links.forEachIndexed { index, link ->
+            val result = BitchatShield.inspectEvent("synthetic-$index", link, "Reader", 1000L + index)
+            assertEquals(index == 0, result is BitchatShield.InspectionResult.Allowed)
+        }
+    }
+
+    @Test
+    fun `obfuscated domain and unicode hostname remain normalized`() {
+        assertEquals(listOf("example.org", "example.org", "xn--bcher-kva.example"), BitchatShield.extractNormalizedLinkKeys("example[.]org example(.)org https://bücher.example/read"))
     }
 
     @Test

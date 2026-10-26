@@ -7,6 +7,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.text.Normalizer
+import java.net.URI
+import java.net.IDN
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -149,13 +152,17 @@ object BitchatShield {
     fun extractNormalizedLinkKeys(input: String): List<String> {
         if (input.isEmpty()) return emptyList()
         return URL_OR_LINK_REGEX.findAll(input).map { match ->
-            var raw = match.value.lowercase()
+            val raw = match.value.lowercase(Locale.ROOT)
                 .replace("[.]", ".")
                 .replace("(.)", ".")
-                .replace(" ", "")
-            raw = raw.removePrefix("https://").removePrefix("http://").removePrefix("www.")
-            val host = raw.substringBefore('/').substringBefore('?').substringBefore('#').trimEnd('.', ',', ';', ')', ']')
-            host.ifEmpty { raw }
+                .replace(Regex("\\s+"), "")
+                .trimEnd('.', ',', ';', ')')
+            val uriText = if (raw.startsWith("http://") || raw.startsWith("https://")) raw else "https://$raw"
+            val uri = runCatching { URI(uriText) }.getOrElse { runCatching { URI(uriText.trimEnd(']')) }.getOrNull() }
+            val host = uri?.host ?: (uri?.rawAuthority ?: raw.removePrefix("https://").removePrefix("http://").substringBefore('/').substringBefore('?').substringBefore('#'))
+                .substringAfterLast('@').substringBefore(':')
+            runCatching { IDN.toASCII(host) }.getOrDefault(host)
+                .lowercase(Locale.ROOT).removePrefix("www.").trimEnd('.')
         }.toList()
     }
 
@@ -278,6 +285,7 @@ object BitchatShield {
     /**
      * Inspects an incoming Nostr geohash/DM/note event or Mesh message.
      */
+    @Synchronized
     fun inspectEvent(
         pubkey: String,
         rawContent: String,
@@ -342,6 +350,8 @@ object BitchatShield {
         }
 
         val eventSec = createdAtSeconds ?: (nowMs / 1000L)
+        var linksToRecord = emptyList<String>()
+        var fingerprintToRecord: String? = null
 
         // 3. Anti-Link-Spam check (allows normal link sharing, blocks repeated domain/URL spam or multi-link floods)
         if (_blockLinks.value) {
@@ -361,12 +371,7 @@ object BitchatShield {
                     return InspectionResult.Blocked("link spam ($linkKey)")
                 }
             }
-            for (linkKey in linkKeys.distinct()) {
-                recentLinkTimestamps[linkKey] = eventSec
-            }
-            if (recentLinkTimestamps.size > 500) {
-                recentLinkTimestamps.clear()
-            }
+            linksToRecord = linkKeys.distinct()
         }
 
         // 4. Anti-bot content heuristics
@@ -381,17 +386,20 @@ object BitchatShield {
             // 4b. Long promotional / spam message deduplication across rotating pubkeys
             val fingerprint = contentFingerprint(cleanContent)
             if (fingerprint.length >= MIN_FINGERPRINT_LEN_FOR_DEDUPE) {
-                val previousSec = recentLongSpamFingerprints.put(fingerprint, eventSec)
+                val previousSec = recentLongSpamFingerprints[fingerprint]
                 if (previousSec != null && kotlin.math.abs(eventSec - previousSec) < CONTENT_DEDUPE_WINDOW_SECONDS) {
                     recordBlocked("duplicate long spam content", normalizedPubkey)
                     return InspectionResult.Blocked("duplicate content")
                 }
-                if (recentLongSpamFingerprints.size > 500) {
-                    recentLongSpamFingerprints.clear()
-                }
+                fingerprintToRecord = fingerprint
             }
         }
 
+        // Rejected events must not consume another message's admission slots.
+        for (linkKey in linksToRecord) recentLinkTimestamps[linkKey] = eventSec
+        fingerprintToRecord?.let { recentLongSpamFingerprints[it] = eventSec }
+        if (recentLinkTimestamps.size > 500) recentLinkTimestamps.clear()
+        if (recentLongSpamFingerprints.size > 500) recentLongSpamFingerprints.clear()
         return InspectionResult.Allowed(cleanContent, cleanNick)
     }
 

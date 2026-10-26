@@ -53,6 +53,11 @@ sealed class DeliveryStatus : Parcelable {
  * BitchatMessage - 100% compatible with iOS version
  */
 @Parcelize
+enum class GeohashSendState : Parcelable {
+    Mining, Sending, RelayAccepted, Failed, Unconfirmed
+}
+
+@Parcelize
 data class BitchatMessage(
     val id: String = UUID.randomUUID().toString().uppercase(),
     val sender: String,
@@ -77,7 +82,9 @@ data class BitchatMessage(
      * surfaces color the sender by the same stable key while [senderPeerID] remains available for
      * mesh IDs and private-chat routing aliases.
      */
-    val senderNostrPubkey: String? = null
+    val senderNostrPubkey: String? = null,
+    // Local UI state only; never included in the binary or Nostr payload.
+    val geohashSendState: GeohashSendState? = null
 ) : Parcelable {
 
     /**
@@ -339,6 +346,8 @@ data class BitchatMessage(
         } else if (other.encryptedContent != null) return false
         if (isEncrypted != other.isEncrypted) return false
         if (deliveryStatus != other.deliveryStatus) return false
+        if (powDifficulty != other.powDifficulty) return false
+        if (geohashSendState != other.geohashSendState) return false
 
         return true
     }
@@ -359,6 +368,8 @@ data class BitchatMessage(
         result = 31 * result + (encryptedContent?.contentHashCode() ?: 0)
         result = 31 * result + isEncrypted.hashCode()
         result = 31 * result + (deliveryStatus?.hashCode() ?: 0)
+        result = 31 * result + (powDifficulty?.hashCode() ?: 0)
+        result = 31 * result + (geohashSendState?.hashCode() ?: 0)
         return result
     }
 }
