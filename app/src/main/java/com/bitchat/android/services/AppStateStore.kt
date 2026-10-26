@@ -859,6 +859,22 @@ object AppStateStore {
         }
     }
 
+    fun replaceChannelMessage(channel: String, previousId: String, message: BitchatMessage) {
+        synchronized(this) {
+            val existing = _channelMessages.value[channel] ?: return
+            if (existing.none { it.id == previousId }) return
+            val updated = existing.mapNotNull {
+                when {
+                    it.id == previousId -> message
+                    it.id == message.id -> null
+                    else -> it
+                }
+            }
+            rememberPublicMessageID(message.id)
+            _channelMessages.value = _channelMessages.value + (channel to updated)
+        }
+    }
+
     private fun appendPublicMessage(messages: List<BitchatMessage>, message: BitchatMessage) =
         buildList(minOf(MAX_PUBLIC_TIMELINE_MESSAGES, messages.size + 1)) {
             val start = (messages.size - MAX_PUBLIC_TIMELINE_MESSAGES + 1).coerceAtLeast(0)

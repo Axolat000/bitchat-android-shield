@@ -65,6 +65,11 @@ class MessageManager(private val state: ChatState) {
         }
     }
     
+    fun replaceChannelMessage(channel: String, previousId: String, message: BitchatMessage) {
+        com.bitchat.android.services.AppStateStore.replaceChannelMessage(channel, previousId, message)
+        state.setChannelMessages(com.bitchat.android.services.AppStateStore.channelMessages.value)
+    }
+
     fun clearChannelMessages(channel: String) {
         com.bitchat.android.services.AppStateStore.clearChannelMessages(channel)
         state.setChannelMessages(com.bitchat.android.services.AppStateStore.channelMessages.value)
