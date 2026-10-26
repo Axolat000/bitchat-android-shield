@@ -30,8 +30,8 @@ android {
         applicationId = "com.bitchat.shield"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 40
-        versionName = "2.0.3"
+        versionCode = 41
+        versionName = "2.0.4-shield.1"
         buildConfigField(
             "String",
             "GITHUB_RELEASE_CERT_SHA256",
